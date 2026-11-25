@@ -15,8 +15,8 @@
  */
 
 export const CONFIG = {
-  SUPABASE_URL: "TU_SUPABASE_URL",
-  SUPABASE_ANON_KEY: "TU_SUPABASE_ANON_KEY",
+  SUPABASE_URL: "https://ztkluumuxpltxazgpziz.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0a2x1dW11eHBsdHhhemdweml6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2MzAyMzMsImV4cCI6MjExMTIwNjIzM30.uL8S_3iJF1dTcysL75ga2mPPK-QrQueX4aJlD3jN2no",
   // Versión sugerida al abrir un pasaje en BibleGateway.
   BIBLE_VERSION: "RVR1960",
 };
