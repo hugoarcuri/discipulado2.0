@@ -23,14 +23,14 @@ Este informe resume el trabajo realizado por etapas, los archivos principales in
 
 **Implementado:**
 - `js/config.js` con URL y `anon key` de ejemplo; detección automática de modo demo/real.
-- `js/demo.js`: backend local con `localStorage`, hash SHA-256 para contraseñas, tres cuentas, cuatro estudios, asignaciones, respuestas y observaciones.
+- `js/demo.js`: backend local con `localStorage`, hash SHA-256 para contraseñas y base de demostración vacía (sin cuentas, estudios ni respuestas de ejemplo). Migración que elimina las antiguas cuentas demo sin borrar cuentas propias.
 - `js/store.js`: única puerta de entrada a los datos; la interfaz no sabe si usa Supabase o demo.
 - `js/supabase.js`: cliente real, Auth, consultas y operaciones equivalentes al backend demo.
-- Etiqueta visible **DEMO** y aviso de modo demostración.
+- Etiqueta visible **DEMO** y aviso de modo demostración, aclarando que la cuenta y los datos viven solo en ese navegador.
 
 **Archivos:** `js/config.js`, `js/store.js`, `js/demo.js`, `js/supabase.js`.
 
-**Verificación:** flujo completo de demostración probado en navegador; reinicio de datos documentado.
+**Verificación:** flujo completo de demostración probado en navegador; la demo arranca vacía y las cuentas creadas persisten al cerrar sesión. Reinicio de datos documentado.
 
 ## Etapa 3 — Autenticación, roles y enrutamiento
 

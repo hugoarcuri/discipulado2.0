@@ -31,31 +31,24 @@ También podés publicarla en cualquier hosting estático (Netlify, Vercel, GitH
 Si `js/config.js` conserva los valores de ejemplo, la aplicación arranca en **modo demostración**. En este modo:
 
 - No se conecta a Supabase.
-- Las cuentas, estudios, asignaciones, respuestas y observaciones se guardan en `localStorage` del navegador.
+- La cuenta que crees y todos tus datos se guardan en `localStorage` de ese navegador.
 - La interfaz muestra la etiqueta **DEMO** y un aviso visible.
-- Los datos de ejemplo **no son datos reales** y no se envían a ningún servidor.
+- La demostración arranca **vacía**: no hay cuentas, estudios ni respuestas precargadas.
+- Nada se envía a un servidor. Si borrás los datos del sitio, cambiás de navegador o usás una ventana privada, la cuenta desaparece.
 
-### Cuentas de demostración
+### Crear la cuenta
 
-| Rol | Email | Contraseña |
-| --- | --- | --- |
-| Discipulador | `ana@demo.com` | `demo1234` |
-| Discípulo | `lucas@demo.com` | `demo1234` |
-| Discípulo | `sofia@demo.com` | `demo1234` |
+1. Entrá a **Crear cuenta**.
+2. Elegí **Discipulador** o **Discípulo**.
+3. Completá nombre, email y una contraseña de al menos 8 caracteres.
 
-Los botones **Entrar como discipulador** y **Entrar como discípulo** inician sesión con Ana y Lucas respectivamente.
+La cuenta queda guardada en ese navegador. Podés cerrar sesión y volver a entrar con el mismo email y contraseña. No hay recuperación de contraseña en modo demo: si la olvidás, podés reiniciar los datos y crear una cuenta nueva.
 
-### Datos precargados
-
-- Ana Martínez tiene dos discípulos: Lucas Fernández y Sofía Ramírez.
-- Hay cuatro estudios, uno por etapa: *El regalo de la gracia*, *Una vida de oración*, *El fruto del Espíritu en las relaciones* y *Llamados a servir*.
-- Lucas tiene tres estudios asignados (uno completado y dos pendientes) con respuestas de ejemplo.
-- Sofía tiene dos estudios asignados y completados.
-- Ana tiene observaciones privadas de ejemplo sobre sus discípulos.
+Si al iniciar sesión aparece **“No encontramos una cuenta con ese email en este navegador”**, la cuenta no existe en ese navegador (por ejemplo, porque se borraron los datos del sitio, se usó una ventana privada o se abrió desde otro dispositivo). En modo demo las cuentas no se sincronizan entre navegadores.
 
 ### Reiniciar la demostración
 
-Para volver al estado inicial, abrí la consola del navegador y ejecutá:
+Para borrar todas las cuentas y datos locales y volver al estado inicial vacío, abrí la consola del navegador y ejecutá:
 
 ```js
 localStorage.removeItem("discipulos.demo.db.v1");
@@ -66,7 +59,7 @@ location.reload();
 
 También podés borrar los datos del sitio desde la configuración del navegador.
 
-Las contraseñas de demostración se guardan como hash SHA-256 con una sal fija. Es una medida de higiene local, no reemplaza la seguridad de Supabase Auth. **No uses el modo demostración para datos reales.**
+Las contraseñas del modo demo se guardan como hash SHA-256 con una sal fija. Es una medida de higiene local, no reemplaza la seguridad de Supabase Auth. **No uses el modo demostración para datos reales.**
 
 ---
 
@@ -101,7 +94,7 @@ export const CONFIG = {
 
 Al guardar credenciales válidas, la aplicación pasa automáticamente a **modo real**:
 
-- El aviso de demostración y los accesos rápidos desaparecen.
+- El aviso de demostración desaparece.
 - La autenticación la maneja Supabase Auth.
 - Los datos se leen y escriben en PostgreSQL con RLS.
 
@@ -265,11 +258,11 @@ discipuladov2/
 │   └── styles.css             Identidad visual, componentes y responsive
 ├── js/
 │   ├── app.js                 Arranque, sesión, router, navegación y perfil
-│   ├── auth.js                Login, registro y accesos de demostración
+│   ├── auth.js                Login y registro
 │   ├── invite.js             Token, URL y mensaje de WhatsApp de invitaciones
 │   ├── config.js              URL/clave de Supabase y detección de modo
 │   ├── store.js               Selección de backend y estado de sesión
-│   ├── demo.js                Backend local con localStorage y datos de ejemplo
+│   ├── demo.js                Backend local vacío para la demostración
 │   ├── supabase.js            Backend real: Auth, consultas y operaciones
 │   ├── ui.js                  Iconos, formato, diálogos, formularios y toasts
 │   ├── discipulos.js          Vistas del discipulador sobre sus discípulos
@@ -316,7 +309,8 @@ No son funcionalidades extra: son separaciones internas para cumplir los requisi
 
 Probado en navegador con el modo demostración:
 
-- Inicio y cierre de sesión, registro de discípulo y restauración de sesión.
+- Registro de discipulador y de discípulo, cierre de sesión y nuevo inicio con las mismas credenciales.
+- La demostración arranca sin cuentas ni datos de ejemplo; las cuentas creadas persisten en el navegador.
 - Menús y rutas separadas por rol, con redirección al intentar abrir rutas del otro rol.
 - Invitación de discípulo: creación del link, copia, mensaje de WhatsApp y revocación.
 - Aceptación desde el link sin sesión: registro con email y rol fijados por la invitación, aceptación automática y aparición en la lista del discipulador.

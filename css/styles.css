@@ -456,28 +456,6 @@ a:hover {
   line-height: 1.55;
 }
 
-.demo-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.demo-pass {
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-.demo-pass code {
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: var(--gold-soft);
-  color: var(--green-900);
-  font-size: 0.76rem;
-  font-weight: 600;
-}
-
 /* ---------- Formularios ---------- */
 .form {
   display: grid;
@@ -547,6 +525,48 @@ a:hover {
 .field-hint {
   color: var(--muted);
   font-size: 0.76rem;
+}
+
+/* Botón para mostrar u ocultar la contraseña */
+.password-wrap {
+  position: relative;
+}
+
+.password-wrap input {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.password-toggle:hover {
+  background: rgba(18, 60, 45, 0.07);
+  color: var(--green-800);
+}
+
+.password-toggle:focus-visible {
+  outline: 3px solid rgba(198, 161, 91, 0.65);
+  outline-offset: 1px;
+}
+
+.password-toggle .icon {
+  width: 18px;
+  height: 18px;
 }
 
 .field-grid {

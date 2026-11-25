@@ -35,10 +35,38 @@ function switchView(view) {
   registerForm.hidden = isLogin;
   clearNotices(loginForm);
   clearNotices(registerForm);
+  resetPasswordToggles();
   const target = isLogin
     ? loginForm.querySelector("#login-email")
     : registerForm.querySelector("#register-name");
   setTimeout(() => target?.focus(), 30);
+}
+
+function setPasswordVisibility(button, visible) {
+  const input = document.getElementById(button.getAttribute("aria-controls") || "");
+  if (!input) return;
+  input.type = visible ? "text" : "password";
+  button.setAttribute("aria-pressed", String(visible));
+  const label = visible ? "Ocultar contraseña" : "Mostrar contraseña";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.innerHTML = icon(visible ? "eye-off" : "eye");
+}
+
+function resetPasswordToggles() {
+  document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+    setPasswordVisibility(button, false);
+  });
+}
+
+function setupPasswordToggles() {
+  document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+    setPasswordVisibility(button, false);
+    button.addEventListener("click", () => {
+      const isVisible = button.getAttribute("aria-pressed") === "true";
+      setPasswordVisibility(button, !isVisible);
+    });
+  });
 }
 
 function clearNotices(form) {
@@ -66,12 +94,6 @@ function setupMode() {
   const isDemo = store.mode === "demo";
   modeChip.hidden = !isDemo;
   demoBox.hidden = !isDemo;
-
-  if (!isDemo) {
-    demoBox.querySelectorAll("[data-demo-login]").forEach((button) => {
-      button.hidden = true;
-    });
-  }
 }
 
 function showInvitationBanner({ title, text, tone = "gold" }) {
@@ -170,38 +192,6 @@ function invitationRole() {
   return invitationContext ? "discipulo" : null;
 }
 
-function bindDemoLogin() {
-  const demoBox = document.getElementById("demo-box");
-  demoBox.querySelectorAll("[data-demo-login]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const role = button.dataset.demoLogin;
-      const credentials = store.api?.demoCredentials?.[role];
-      if (!credentials) {
-        setFormError(
-          document.getElementById("login-form"),
-          "Las cuentas de demostración no están disponibles.",
-        );
-        return;
-      }
-
-      const loginForm = document.getElementById("login-form");
-      loginForm.elements.email.value = credentials.email;
-      loginForm.elements.password.value = credentials.password;
-      setButtonLoading(button, true, "Ingresando…");
-      clearFormError(loginForm);
-      try {
-        const user = await store.signIn(credentials.email, credentials.password);
-        loginForm.reset();
-        callbacks.onAuthenticated(user);
-      } catch (error) {
-        setFormError(loginForm, error.message || "No pudimos iniciar sesión.");
-      } finally {
-        setButtonLoading(button, false);
-      }
-    });
-  });
-}
-
 function bindLoginForm() {
   const form = document.getElementById("login-form");
   form.addEventListener("submit", async (event) => {
@@ -291,9 +281,9 @@ export function initAuth({ onAuthenticated }) {
   callbacks.onAuthenticated = onAuthenticated;
 
   setupMode();
+  setupPasswordToggles();
   bindLoginForm();
   bindRegisterForm();
-  bindDemoLogin();
 
   document.querySelectorAll("[data-auth-view]").forEach((button) => {
     button.addEventListener("click", () => switchView(button.dataset.authView));

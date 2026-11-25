@@ -64,7 +64,10 @@
           </div>
           <div class="field">
             <label for="login-password">Contraseña</label>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Tu contraseña" required>
+            <div class="password-wrap">
+              <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Tu contraseña" required>
+              <button type="button" class="password-toggle" data-password-toggle aria-controls="login-password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña"></button>
+            </div>
           </div>
           <button type="submit" class="btn btn-primary btn-block" id="login-submit">
             Ingresar
@@ -111,8 +114,11 @@
           </div>
           <div class="field">
             <label for="register-password">Contraseña</label>
-            <input type="password" id="register-password" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" minlength="8" required>
-            <p class="field-hint">Usá al menos 8 caracteres. Tu contraseña la gestiona Supabase Auth.</p>
+            <div class="password-wrap">
+              <input type="password" id="register-password" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" minlength="8" required>
+              <button type="button" class="password-toggle" data-password-toggle aria-controls="register-password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña"></button>
+            </div>
+            <p class="field-hint">Usá al menos 8 caracteres. En modo real la gestiona Supabase Auth.</p>
           </div>
           <button type="submit" class="btn btn-primary btn-block" id="register-submit">
             Crear cuenta
@@ -121,17 +127,8 @@
         </form>
 
         <div class="demo-box" id="demo-box" hidden>
-          <p class="demo-box-title">Cuentas de demostración</p>
-          <p class="demo-box-text">Probá la aplicación con datos de ejemplo. Se guardan únicamente en este navegador y no son datos reales.</p>
-          <div class="demo-actions">
-            <button type="button" class="btn btn-secondary btn-sm" data-demo-login="discipulador">
-              Entrar como discipulador
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm" data-demo-login="discipulo">
-              Entrar como discípulo
-            </button>
-          </div>
-          <p class="demo-pass">Contraseña de ambas cuentas: <code>demo1234</code></p>
+          <p class="demo-box-title">Modo demostración</p>
+          <p class="demo-box-text">Tu cuenta y tus datos se guardan solo en este navegador, no se envían a ningún servidor. Si borrás los datos del sitio o abrís la app en otro dispositivo, vas a necesitar crear la cuenta de nuevo.</p>
         </div>
       </div>
 
