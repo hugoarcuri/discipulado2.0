@@ -9,10 +9,13 @@
  * diferencia entre ambos sea explícita.
  */
 
+import { createInviteToken } from "./invite.js";
+
 const DB_KEY = "discipulos.demo.db.v1";
 const SESSION_KEY = "discipulos.demo.session.v1";
 const DEMO_PASSWORD = "demo1234";
 const APP_SALT = "discipulos-demo-local";
+const INVITATION_DAYS = 14;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -59,6 +62,23 @@ function publicUser(user) {
 
 function normalizeEmail(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value ?? "").trim());
+}
+
+function invitationState(invitation) {
+  if (invitation.estado === "pendiente" && new Date(invitation.fecha_vencimiento) < new Date()) {
+    return "expirada";
+  }
+  return invitation.estado;
+}
+
+function invitationDaysFromNow(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
 }
 
 function nameOf(profile) {
@@ -373,12 +393,21 @@ function buildSeed(passwordHash) {
         fecha_creacion: "2026-10-02T20:00:00.000Z",
       },
     ],
+    invitations: [],
   };
 }
 
 async function ensureSeed() {
   let db = readDb();
-  if (db) return db;
+  if (db) {
+    let changed = false;
+    if (!Array.isArray(db.invitations)) {
+      db.invitations = [];
+      changed = true;
+    }
+    if (changed) writeDb(db);
+    return db;
+  }
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   db = buildSeed(passwordHash);
   writeDb(db);
@@ -488,35 +517,162 @@ export async function createDemoBackend() {
     return result;
   }
 
-  async function addDisciple(email) {
+  async function createInvitation({ nombre, email }) {
     const db = readDb();
     const me = requireSession(db);
     if (me.rol !== "discipulador") {
-      throw new Error("Solo un discipulador puede agregar discípulos.");
+      throw new Error("Solo un discipulador puede invitar discípulos.");
     }
+    const cleanName = String(nombre ?? "").trim().replace(/\s+/g, " ");
     const normalizedEmail = normalizeEmail(email);
-    const disciple = db.users.find((user) => user.email === normalizedEmail);
-    if (!disciple || disciple.rol !== "discipulo") {
+    if (cleanName.length < 2) throw new Error("Ingresá el nombre de la persona.");
+    if (cleanName.length > 80) throw new Error("El nombre no puede superar los 80 caracteres.");
+    if (!isValidEmail(normalizedEmail)) throw new Error("Ingresá un email válido.");
+
+    const existingUser = db.users.find((user) => user.email === normalizedEmail);
+    if (existingUser) {
+      const alreadyLinked = db.discipleships.some(
+        (link) => link.discipulador_id === me.id && link.discipulo_id === existingUser.id,
+      );
+      if (alreadyLinked) throw new Error("Ese discípulo ya está en tu lista.");
+    }
+
+    const duplicate = db.invitations.find(
+      (invitation) =>
+        invitation.discipulador_id === me.id &&
+        invitation.email === normalizedEmail &&
+        invitationState(invitation) === "pendiente",
+    );
+    if (duplicate) {
+      throw new Error("Ya tenés una invitación pendiente para ese email.");
+    }
+
+    let token = createInviteToken();
+    while (db.invitations.some((invitation) => invitation.token === token)) {
+      token = createInviteToken();
+    }
+
+    const invitation = {
+      id: `i_${crypto.randomUUID()}`,
+      token,
+      discipulador_id: me.id,
+      nombre: cleanName,
+      email: normalizedEmail,
+      estado: "pendiente",
+      discipulo_id: null,
+      fecha_creacion: new Date().toISOString(),
+      fecha_vencimiento: invitationDaysFromNow(INVITATION_DAYS),
+      fecha_aceptacion: null,
+    };
+    db.invitations.push(invitation);
+    writeDb(db);
+    return clone(invitation);
+  }
+
+  async function listInvitations() {
+    const db = readDb();
+    const me = requireSession(db);
+    if (me.rol !== "discipulador") return [];
+    let changed = false;
+    const pending = db.invitations
+      .filter((invitation) => invitation.discipulador_id === me.id)
+      .filter((invitation) => {
+        if (invitation.estado === "pendiente" && invitationState(invitation) === "expirada") {
+          invitation.estado = "expirada";
+          changed = true;
+        }
+        return invitation.estado === "pendiente";
+      })
+      .sort((a, b) => String(b.fecha_creacion).localeCompare(String(a.fecha_creacion)))
+      .map(clone);
+    if (changed) writeDb(db);
+    return pending;
+  }
+
+  async function getInvitation(token) {
+    const db = readDb();
+    if (!db) return null;
+    const invitation = db.invitations.find((item) => item.token === String(token ?? ""));
+    if (!invitation) return null;
+    const discipler = db.users.find((user) => user.id === invitation.discipulador_id);
+    return {
+      id: invitation.id,
+      nombre: invitation.nombre,
+      email: invitation.email,
+      estado: invitationState(invitation),
+      discipulo_id: invitation.discipulo_id || null,
+      fecha_creacion: invitation.fecha_creacion,
+      fecha_vencimiento: invitation.fecha_vencimiento,
+      discipulador: discipler ? publicUser(discipler) : null,
+    };
+  }
+
+  async function acceptInvitation(token) {
+    const db = readDb();
+    const me = requireSession(db);
+    const invitation = db.invitations.find((item) => item.token === String(token ?? ""));
+    if (!invitation) throw new Error("No encontramos esta invitación.");
+
+    const state = invitationState(invitation);
+    if (state === "aceptada") {
+      if (invitation.discipulo_id === me.id) {
+        return { invitation: clone(invitation), alreadyAccepted: true };
+      }
+      throw new Error("Esta invitación ya fue utilizada por otra persona.");
+    }
+    if (state === "revocada") {
+      throw new Error("Esta invitación fue revocada por el discipulador.");
+    }
+    if (state === "expirada") {
+      throw new Error("Esta invitación venció. Pedile al discipulador que genere un link nuevo.");
+    }
+    if (me.rol !== "discipulo") {
+      throw new Error("Esta invitación es para una cuenta de discípulo.");
+    }
+    if (normalizeEmail(me.email) !== invitation.email) {
       throw new Error(
-        "No encontramos una cuenta de discípulo con ese email. La persona debe registrarse primero como discípulo.",
+        `Esta invitación es para ${invitation.email}. Iniciá sesión con esa cuenta para aceptarla.`,
       );
     }
-    const existing = db.discipleships.find(
-      (link) => link.discipulador_id === me.id && link.discipulo_id === disciple.id,
+
+    let link = db.discipleships.find(
+      (candidate) =>
+        candidate.discipulador_id === invitation.discipulador_id &&
+        candidate.discipulo_id === me.id,
     );
-    if (existing) {
-      throw new Error("Ese discípulo ya está en tu lista.");
+    if (!link) {
+      link = {
+        id: `ds_${crypto.randomUUID()}`,
+        discipulador_id: invitation.discipulador_id,
+        discipulo_id: me.id,
+        fecha_inicio: new Date().toISOString().slice(0, 10),
+        estado: "activo",
+      };
+      db.discipleships.push(link);
     }
-    const link = {
-      id: `ds_${crypto.randomUUID()}`,
-      discipulador_id: me.id,
-      discipulo_id: disciple.id,
-      fecha_inicio: new Date().toISOString().slice(0, 10),
-      estado: "activo",
-    };
-    db.discipleships.push(link);
+    invitation.estado = "aceptada";
+    invitation.discipulo_id = me.id;
+    invitation.fecha_aceptacion = new Date().toISOString();
     writeDb(db);
-    return { ...clone(link), discipulo: publicUser(disciple) };
+    return { invitation: clone(invitation), discipleship: clone(link), alreadyAccepted: false };
+  }
+
+  async function revokeInvitation(invitationId) {
+    const db = readDb();
+    const me = requireSession(db);
+    if (me.rol !== "discipulador") {
+      throw new Error("Solo un discipulador puede revocar invitaciones.");
+    }
+    const invitation = db.invitations.find(
+      (candidate) => candidate.id === invitationId && candidate.discipulador_id === me.id,
+    );
+    if (!invitation) throw new Error("No encontramos esa invitación.");
+    if (invitation.estado !== "pendiente") {
+      throw new Error("Esa invitación ya no está pendiente.");
+    }
+    invitation.estado = "revocada";
+    writeDb(db);
+    return clone(invitation);
   }
 
   async function getDiscipleDetail(discipleId) {
@@ -823,7 +979,11 @@ export async function createDemoBackend() {
     signOut,
     updateProfile,
     listDisciples,
-    addDisciple,
+    createInvitation,
+    listInvitations,
+    getInvitation,
+    acceptInvitation,
+    revokeInvitation,
     getDiscipleDetail,
     listObservations,
     addObservation,

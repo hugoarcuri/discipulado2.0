@@ -60,6 +60,7 @@ Para volver al estado inicial, abrí la consola del navegador y ejecutá:
 ```js
 localStorage.removeItem("discipulos.demo.db.v1");
 localStorage.removeItem("discipulos.demo.session.v1");
+localStorage.removeItem("discipulos.pending.invite.v1");
 location.reload();
 ```
 
@@ -83,6 +84,8 @@ Las contraseñas de demostración se guardan como hash SHA-256 con una sal fija.
 1. Abrí **SQL Editor** en Supabase.
 2. Pegá y ejecutá todo el contenido de `supabase/schema.sql`.
 3. El script crea tablas, índices, triggers, funciones auxiliares, políticas RLS y permisos.
+
+Si el proyecto ya existía antes de las invitaciones por link, ejecutá también `supabase/migrations/20261125_invitations.sql`. Es idempotente: agrega la tabla `invitations`, sus políticas y las funciones `get_invitation` y `accept_invitation` sin borrar datos.
 
 ### 3.3 Configurar la aplicación
 
@@ -116,14 +119,14 @@ Si dejás activada la confirmación por email, después del registro la persona 
 
 ### 3.5 Primeros pasos en modo real
 
-1. Registrate primero como **discipulador**.
-2. Cerrá sesión y registrate como **discípulo** con otro email.
-3. Volvé a entrar como discipulador.
-4. En **Mis discípulos → Agregar discípulo**, ingresá el email exacto con el que se registró el discípulo.
+1. Registrate como **discipulador**.
+2. En **Mis discípulos → Invitar discípulo**, ingresá el nombre y el email de la persona.
+3. Copiá el link personal o compartilo por WhatsApp.
+4. La persona abre el link, crea su cuenta con ese email (el rol de discípulo queda fijado por la invitación) y acepta automáticamente.
 5. Creá estudios en **Estudios bíblicos** y asignálos.
 6. El discípulo podrá leerlos, responder y completarlos desde su cuenta.
 
-El discipulador se vincula por email; no se crean cuentas de discípulos desde el panel del discipulador.
+El vínculo se crea al aceptar la invitación. No hace falta que la persona se registre antes por su cuenta ni que el discipulador conozca su contraseña.
 
 ---
 
@@ -133,7 +136,8 @@ El discipulador se vincula por email; no se crean cuentas de discípulos desde e
 
 - **Mis discípulos**
   - Ver la lista de discípulos vinculados y su progreso.
-  - Agregar un discípulo por email (la cuenta debe existir con rol `discipulo`).
+  - Invitar discípulos con un link personal por email, sin que la cuenta exista todavía.
+  - Copiar el link, compartirlo por WhatsApp, revocarlo o ver su vencimiento.
   - Abrir la ficha de cada discípulo.
   - Ver estudios asignados, estado y respuestas.
   - Asignar estudios a uno o varios discípulos.
@@ -172,6 +176,8 @@ El discipulador se vincula por email; no se crean cuentas de discípulos desde e
 - Un discipulador solo puede ver los perfiles, asignaciones, respuestas y observaciones vinculados a sus propios discípulos.
 - Un discípulo solo puede ver sus propios estudios, respuestas y los datos de su discipulador.
 - Las observaciones son privadas del discipulador que las escribió.
+- Una invitación solo puede aceptarla la cuenta cuyo email coincide con el de la invitación, y siempre entra como `discipulo`.
+- El token del link es el secreto: no se muestra en la lista de discípulos ni se puede adivinar a partir del email.
 
 ---
 
@@ -205,6 +211,7 @@ No hay fechas límite, puntajes ni desbloqueos. El orden lo define el discipulad
 | `assignments` | Asignación de un estudio a un discípulo. |
 | `responses` | Respuestas de un discípulo a una asignación, guardadas como JSONB por ID de pregunta. |
 | `observations` | Notas privadas del discipulador sobre un discípulo. |
+| `invitations` | Links personales para invitar discípulos: token, email, estado y vencimiento. |
 
 Decisiones relevantes:
 
@@ -213,6 +220,8 @@ Decisiones relevantes:
 - **Editar un estudio conserva los IDs de las preguntas existentes.** Las respuestas anteriores siguen asociadas.
 - **Eliminar un estudio elimina en cascada sus asignaciones y respuestas.** La interfaz lo advierte antes de borrar.
 - **El perfil se crea con un trigger** al insertarse el usuario en `auth.users`. Si el trigger no existe, el cliente intenta crear el perfil como respaldo.
+- **La invitación guarda el email y el token**, no la contraseña. Al registrarse con ese email, el trigger fuerza el rol `discipulo` y la aceptación crea el vínculo en `discipleships`.
+- **Las invitaciones vencen a los 14 días** y pasan a `expirada`; el discipulador puede revocarlas antes de que se usen.
 
 ---
 
@@ -226,12 +235,15 @@ Todo el acceso a datos pasa por políticas **Row Level Security**. Resumen:
 - `assignments`: visibles para el discipulador que asignó y para el discípulo asignado. El discípulo solo puede actualizar el estado y la fecha de finalización; un trigger impide cambiar el estudio, el discípulo o el autor.
 - `responses`: visibles para el discípulo dueño y para el discipulador que hizo la asignación. Solo el discípulo dueño puede crearlas o editarlas. Un trigger impide cambiar la asignación o el discípulo.
 - `observations`: solo el discipulador que las escribió puede verlas, crearlas, editarlas o eliminarlas.
+- `invitations`: el discipulador ve y gestiona solo las suyas; el discípulo invitado puede ver la que aceptó. La aceptación se hace por función `SECURITY DEFINER`, que verifica sesión, vencimiento, estado y email.
 
 Además:
 
 - `anon` no tiene permisos sobre las tablas.
 - Las funciones auxiliares de RLS son `SECURITY DEFINER` con `search_path` fijo para evitar bloqueos circulares entre políticas.
 - `buscar_discipulo_por_email` solo devuelve coincidencias exactas y solo puede ejecutarla un discipulador autenticado.
+- `get_invitation` se puede llamar sin sesión porque el token es el secreto del link; solo devuelve los datos necesarios para mostrar la invitación.
+- `accept_invitation` exige sesión autenticada y no permite aceptar invitaciones de otro email.
 - Las claves y contraseñas reales nunca se guardan en el repositorio. `js/config.js` solo contiene la URL y la `anon key`, que son públicas.
 
 Si cambiás el esquema, volvé a ejecutar el archivo completo o aplicá las políticas nuevas y recargá el esquema de la API (`notify pgrst, 'reload schema'`).
@@ -254,6 +266,7 @@ discipuladov2/
 ├── js/
 │   ├── app.js                 Arranque, sesión, router, navegación y perfil
 │   ├── auth.js                Login, registro y accesos de demostración
+│   ├── invite.js             Token, URL y mensaje de WhatsApp de invitaciones
 │   ├── config.js              URL/clave de Supabase y detección de modo
 │   ├── store.js               Selección de backend y estado de sesión
 │   ├── demo.js                Backend local con localStorage y datos de ejemplo
@@ -263,7 +276,9 @@ discipuladov2/
 │   ├── estudios.js            Listado, detalle, formulario y asignación de estudios
 │   └── seguimiento.js         Estudios del discípulo, lección y progreso
 └── supabase/
-    └── schema.sql             Tablas, triggers, funciones, RLS y permisos
+    ├── schema.sql             Tablas, triggers, funciones, RLS y permisos
+    └── migrations/
+        └── 20261125_invitations.sql  Migración de invitaciones para proyectos existentes
 ```
 
 ### Por qué existen `config.js`, `store.js`, `demo.js` y `ui.js`
@@ -303,7 +318,10 @@ Probado en navegador con el modo demostración:
 
 - Inicio y cierre de sesión, registro de discípulo y restauración de sesión.
 - Menús y rutas separadas por rol, con redirección al intentar abrir rutas del otro rol.
-- Alta de discípulo por email, incluido el error de cuenta ya vinculada o inexistente.
+- Invitación de discípulo: creación del link, copia, mensaje de WhatsApp y revocación.
+- Aceptación desde el link sin sesión: registro con email y rol fijados por la invitación, aceptación automática y aparición en la lista del discipulador.
+- Links inválidos, revocados y vencidos muestran el aviso correspondiente y no se guardan para después.
+- Intento de aceptar una invitación con otro email: se rechaza con un mensaje claro y sin crear el vínculo.
 - Ficha del discípulo, progreso, asignaciones, respuestas y observaciones privadas.
 - Creación, edición, filtrado y eliminación de estudios.
 - Asignación de estudios a discípulos.
@@ -323,9 +341,10 @@ Probado en navegador con el modo demostración:
 Lo que la aplicación **no** incluye a propósito:
 
 - No hay panel general ni métricas globales.
-- No hay chat, notificaciones push ni correo automático.
+- No hay chat, notificaciones push ni correo automático. El link de invitación se comparte manualmente por WhatsApp o se copia.
 - No hay carga de archivos ni material multimedia.
 - No hay edición de email ni recuperación de contraseña desde la interfaz (se pueden gestionar desde Supabase).
+- No se envían recordatorios automáticos de invitaciones pendientes.
 - No hay opción para desvincular discípulos ni para quitar una asignación.
 - No hay progresión automática entre etapas, fechas límite ni calificaciones.
 - No hay modo oscuro.

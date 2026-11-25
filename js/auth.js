@@ -1,6 +1,8 @@
 import { store } from "./store.js";
 import {
   clearFormError,
+  escapeHtml,
+  icon,
   setButtonLoading,
   setFormError,
   setFormSuccess,
@@ -9,6 +11,7 @@ import {
 
 let callbacks = { onAuthenticated: null };
 let initialized = false;
+let invitationContext = null;
 
 function authElements() {
   return {
@@ -17,6 +20,11 @@ function authElements() {
     registerForm: document.getElementById("register-form"),
     modeChip: document.getElementById("auth-mode-chip"),
     demoBox: document.getElementById("demo-box"),
+    banner: document.getElementById("invitation-banner"),
+    roleField: document.getElementById("role-field"),
+    registerTitle: document.getElementById("register-title"),
+    registerLede: document.getElementById("register-lede"),
+    registerEmailHint: document.getElementById("register-email-hint"),
   };
 }
 
@@ -64,6 +72,102 @@ function setupMode() {
       button.hidden = true;
     });
   }
+}
+
+function showInvitationBanner({ title, text, tone = "gold" }) {
+  const { banner } = authElements();
+  if (!banner) return;
+  banner.hidden = false;
+  banner.className = `invite-banner invite-banner-${tone}`;
+  banner.innerHTML = `
+    <span class="invite-banner-icon">${icon(tone === "danger" ? "alert" : "mail")}</span>
+    <div>
+      <p class="invite-banner-title">${escapeHtml(title)}</p>
+      <p class="invite-banner-text">${text}</p>
+    </div>`;
+}
+
+export function applyInvitationContext({ token, invitation }) {
+  invitationContext = { token, invitation };
+  const {
+    loginForm,
+    registerForm,
+    roleField,
+    registerTitle,
+    registerLede,
+    registerEmailHint,
+    demoBox,
+  } = authElements();
+
+  const disciplerName = invitation.discipulador?.nombre || "Tu discipulador";
+  showInvitationBanner({
+    title: `${disciplerName} te invita a su espacio de discipulado`,
+    text: `Creá tu cuenta con <strong>${escapeHtml(
+      invitation.email,
+    )}</strong> para aceptar la invitación. Si ya tenés cuenta con ese email, iniciá sesión.`,
+  });
+
+  if (roleField) roleField.hidden = true;
+  const discipleRadio = registerForm.querySelector('input[name="rol"][value="discipulo"]');
+  if (discipleRadio) discipleRadio.checked = true;
+
+  const registerName = registerForm.elements.nombre;
+  const registerEmail = registerForm.elements.email;
+  const loginEmail = loginForm.elements.email;
+  if (registerName) registerName.value = invitation.nombre || "";
+  if (registerEmail) {
+    registerEmail.value = invitation.email || "";
+    registerEmail.readOnly = true;
+  }
+  if (loginEmail) {
+    loginEmail.value = invitation.email || "";
+    loginEmail.readOnly = true;
+  }
+  if (registerTitle) registerTitle.textContent = "Creá tu cuenta y aceptá la invitación";
+  if (registerLede) {
+    registerLede.textContent = "Solo falta tu contraseña. El email y el rol ya vienen definidos por el link.";
+  }
+  if (registerEmailHint) registerEmailHint.hidden = false;
+  if (demoBox) demoBox.hidden = true;
+
+  switchView("register");
+}
+
+export function showInvitationError({ title, text }) {
+  showInvitationBanner({ title, text, tone: "danger" });
+}
+
+export function clearInvitationContext() {
+  invitationContext = null;
+  const {
+    loginForm,
+    registerForm,
+    banner,
+    roleField,
+    registerTitle,
+    registerLede,
+    registerEmailHint,
+    demoBox,
+  } = authElements();
+  if (banner) {
+    banner.hidden = true;
+    banner.className = "invite-banner";
+    banner.innerHTML = "";
+  }
+  if (roleField) roleField.hidden = false;
+  if (registerTitle) registerTitle.textContent = "Creá tu cuenta";
+  if (registerLede) registerLede.textContent = "Elegí cómo vas a participar para preparar tu espacio.";
+  if (registerEmailHint) registerEmailHint.hidden = true;
+  if (demoBox) demoBox.hidden = store.mode !== "demo";
+
+  for (const form of [loginForm, registerForm]) {
+    const email = form?.elements?.email;
+    if (email) email.readOnly = false;
+  }
+}
+
+function invitationRole() {
+  return invitationContext ? "discipulo" : null;
 }
 
 function bindDemoLogin() {
@@ -134,7 +238,7 @@ function bindRegisterForm() {
     clearNotices(form);
 
     const nombre = form.elements.nombre.value.trim().replace(/\s+/g, " ");
-    const rol = form.querySelector('input[name="rol"]:checked')?.value;
+    const rol = invitationRole() || form.querySelector('input[name="rol"]:checked')?.value;
     const email = form.elements.email.value.trim();
     const password = form.elements.password.value;
 
@@ -200,6 +304,7 @@ export function showAuthScreen() {
   const { authScreen, loginForm, registerForm } = authElements();
   const boot = document.getElementById("boot-screen");
   const app = document.getElementById("app-screen");
+  clearInvitationContext();
   if (boot) boot.hidden = true;
   if (app) app.hidden = true;
   authScreen.hidden = false;

@@ -1,5 +1,6 @@
 import { store } from "./store.js";
 import { openResponsesDialog } from "./estudios.js";
+import { copyText, invitationUrl, whatsappInviteUrl } from "./invite.js";
 import {
   ETAPAS,
   escapeHtml,
@@ -8,6 +9,7 @@ import {
   icon,
   infoNote,
   initials,
+  openDialog,
   openFormDialog,
   pageHeader,
   pluralize,
@@ -48,35 +50,167 @@ function discipleCard(link) {
     </a>`;
 }
 
-function openAddDiscipleDialog(container) {
+function invitationRow(invitation) {
+  const link = invitationUrl(invitation.token);
+  const whatsapp = whatsappInviteUrl({
+    nombre: invitation.nombre,
+    discipler: store.user?.nombre || "tu discipulador",
+    link,
+  });
+  return `
+    <li class="invite-row">
+      <div class="invite-identity">
+        <span class="avatar avatar-sm">${escapeHtml(initials(invitation.nombre))}</span>
+        <div class="invite-identity-text">
+          <strong>${escapeHtml(invitation.nombre)}</strong>
+          <small>${escapeHtml(invitation.email)}</small>
+        </div>
+      </div>
+      <span class="invite-expiry">${icon("clock")} Vence el ${escapeHtml(
+        formatDate(invitation.fecha_vencimiento),
+      )}</span>
+      <div class="invite-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-copy-invite="${escapeHtml(
+          invitation.id,
+        )}">${icon("copy")} Copiar link</button>
+        <a class="btn btn-ghost btn-sm" href="${escapeHtml(
+          whatsapp,
+        )}" target="_blank" rel="noopener noreferrer">${icon("whatsapp")} WhatsApp</a>
+        <button type="button" class="btn btn-danger-ghost btn-sm" data-revoke-invite="${escapeHtml(
+          invitation.id,
+        )}">${icon("x")} Revocar</button>
+      </div>
+    </li>`;
+}
+
+function invitationsSection(invitations) {
+  if (!invitations.length) return "";
+  return `
+    <article class="card card-pad invitations-card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Invitaciones pendientes</h2>
+          <p>Links personales que todavía no fueron aceptados.</p>
+        </div>
+        <span class="badge badge-neutral">${invitations.length}</span>
+      </div>
+      <ul class="invite-list">${invitations.map(invitationRow).join("")}</ul>
+    </article>`;
+}
+
+function openShareDialog(invitation) {
+  const link = invitationUrl(invitation.token);
+  const whatsapp = whatsappInviteUrl({
+    nombre: invitation.nombre,
+    discipler: store.user?.nombre || "tu discipulador",
+    link,
+  });
+
+  const dialogElement = openDialog({
+    title: "Compartir invitación",
+    subtitle: `Link personal para ${invitation.nombre}`,
+    content: `
+      <div class="modal-content">
+        <div class="field">
+          <label for="invite-link">Link de invitación</label>
+          <input type="text" id="invite-link" readonly value="${escapeHtml(link)}">
+          <p class="field-hint">Solo puede aceptarlo una cuenta con el email ${escapeHtml(
+            invitation.email,
+          )}.</p>
+        </div>
+        <div class="invite-share-actions">
+          <button type="button" class="btn btn-secondary" data-copy-link>${icon(
+            "copy",
+          )} Copiar link</button>
+          <a class="btn btn-primary" href="${escapeHtml(
+            whatsapp,
+          )}" target="_blank" rel="noopener noreferrer">${icon(
+            "whatsapp",
+          )} Compartir por WhatsApp</a>
+        </div>
+        ${infoNote(
+          `Vence el ${escapeHtml(
+            formatDate(invitation.fecha_vencimiento),
+          )}. Si lo revocás, el link deja de funcionar.`,
+          { tone: "gold", iconName: "clock" },
+        )}
+      </div>`,
+    footer: `<div class="modal-actions"><button type="button" class="btn btn-ghost" data-dialog-close>Listo</button></div>`,
+  });
+
+  dialogElement.querySelector("[data-copy-link]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await copyText(link);
+      toast("Link copiado.");
+      button.innerHTML = `${icon("check")} Copiado`;
+    } catch (error) {
+      toast(error.message || "No pudimos copiar el link.", "error");
+    }
+  });
+}
+
+function openInviteDialog(container) {
   openFormDialog({
-    title: "Agregar discípulo",
-    subtitle: "La persona debe tener una cuenta registrada como discípulo.",
+    title: "Invitar discípulo",
+    subtitle:
+      "Creá un link personal para que la persona active su cuenta y quede vinculada a vos.",
     fields: `
       <div class="field">
-        <label for="disciple-email">Email del discípulo</label>
-        <input type="email" id="disciple-email" name="email" inputmode="email" autocomplete="off" placeholder="nombre@correo.com" required>
-        <p class="field-hint">Usá el mismo email con el que la persona se registró en Discípulos.</p>
+        <label for="invite-name">Nombre y apellido</label>
+        <input type="text" id="invite-name" name="nombre" autocomplete="off" placeholder="Nombre de la persona" maxlength="80" required>
+      </div>
+      <div class="field">
+        <label for="invite-email">Email</label>
+        <input type="email" id="invite-email" name="email" inputmode="email" autocomplete="off" placeholder="nombre@correo.com" required>
+        <p class="field-hint">El link solo podrá aceptarse con este email.</p>
       </div>
       ${infoNote(
-        "Al agregarla, podrás compartirle estudios y ver su progreso. La persona verá tu nombre como su discipulador.",
-        { tone: "gold", iconName: "info" },
+        "Después de crearlo vas a poder copiar el link o compartirlo por WhatsApp.",
+        { tone: "gold", iconName: "link" },
       )}`,
-    submitLabel: "Agregar discípulo",
+    submitLabel: "Crear link de invitación",
     onSubmit: async (form) => {
+      const nombre = form.elements.nombre.value.trim().replace(/\s+/g, " ");
       const email = form.elements.email.value.trim();
+      if (nombre.length < 2) throw new Error("Ingresá el nombre de la persona.");
       if (!validateEmail(email)) throw new Error("Ingresá un email válido.");
-      await store.api.addDisciple(email);
-      toast("Discípulo agregado a tu lista.");
+      const invitation = await store.api.createInvitation({ nombre, email });
+      toast("Invitación creada.");
+      await renderDisciples(container);
+      openShareDialog(invitation);
+      return false;
+    },
+  });
+}
+
+function openRevokeDialog(invitation, container) {
+  openFormDialog({
+    title: "Revocar invitación",
+    subtitle: `El link de ${invitation.nombre} dejará de funcionar.`,
+    fields: infoNote(
+      "La persona ya no podrá aceptar esta invitación. Si la necesitás, podés generar un link nuevo más adelante.",
+      { tone: "danger", iconName: "alert" },
+    ),
+    submitLabel: "Revocar link",
+    submitClass: "btn-danger",
+    onSubmit: async () => {
+      await store.api.revokeInvitation(invitation.id);
+      toast("Invitación revocada.", "info");
       await renderDisciples(container);
     },
   });
 }
 
 export async function renderDisciples(container) {
-  const disciples = await store.api.listDisciples();
+  const [disciples, invitations] = await Promise.all([
+    store.api.listDisciples(),
+    store.api.listInvitations(),
+  ]);
 
-  const addButton = `<button type="button" class="btn btn-primary" data-add-disciple>${icon("plus")} Agregar discípulo</button>`;
+  const inviteButton = `<button type="button" class="btn btn-primary" data-invite-disciple>${icon(
+    "plus",
+  )} Invitar discípulo</button>`;
 
   container.innerHTML = `
     <section class="page">
@@ -84,23 +218,48 @@ export async function renderDisciples(container) {
         eyebrow: "Acompañamiento",
         title: "Mis discípulos",
         description:
-          "Las personas que estás acompañando. Entrá en una ficha para ver su progreso, sus respuestas y tus observaciones.",
-        actions: addButton,
+          "Las personas que estás acompañando. Compartí un link personal para sumar a alguien nuevo y entrá en cada ficha para ver su progreso.",
+        actions: inviteButton,
       })}
+      ${invitationsSection(invitations)}
       ${
         disciples.length
           ? `<div class="grid-cards">${disciples.map(discipleCard).join("")}</div>`
           : emptyState({
               iconName: "users",
               title: "Todavía no acompañás a nadie",
-              text: "Agregá a tu primer discípulo usando el email con el que se registró. Después podrás compartirle estudios y seguir su crecimiento.",
-              action: `<button type="button" class="btn btn-primary" data-add-disciple>${icon("plus")} Agregar primer discípulo</button>`,
+              text: "Invitá a tu primer discípulo con un link personal. Al abrirlo podrá crear su cuenta y quedar vinculado a vos.",
+              action: `<button type="button" class="btn btn-primary" data-invite-disciple>${icon(
+                "plus",
+              )} Invitar primer discípulo</button>`,
             })
       }
     </section>`;
 
-  container.querySelectorAll("[data-add-disciple]").forEach((button) => {
-    button.addEventListener("click", () => openAddDiscipleDialog(container));
+  const invitationsById = new Map(invitations.map((invitation) => [invitation.id, invitation]));
+
+  container.querySelectorAll("[data-invite-disciple]").forEach((button) => {
+    button.addEventListener("click", () => openInviteDialog(container));
+  });
+
+  container.querySelectorAll("[data-copy-invite]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const invitation = invitationsById.get(button.dataset.copyInvite);
+      if (!invitation) return;
+      try {
+        await copyText(invitationUrl(invitation.token));
+        toast("Link copiado.");
+      } catch (error) {
+        toast(error.message || "No pudimos copiar el link.", "error");
+      }
+    });
+  });
+
+  container.querySelectorAll("[data-revoke-invite]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const invitation = invitationsById.get(button.dataset.revokeInvite);
+      if (invitation) openRevokeDialog(invitation, container);
+    });
   });
 }
 

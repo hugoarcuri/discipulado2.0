@@ -1,5 +1,12 @@
 import { store } from "./store.js";
-import { hideAuthScreen, initAuth, showAuthScreen } from "./auth.js";
+import {
+  applyInvitationContext,
+  clearInvitationContext,
+  hideAuthScreen,
+  initAuth,
+  showAuthScreen,
+  showInvitationError,
+} from "./auth.js";
 import { renderDisciple, renderDisciples } from "./discipulos.js";
 import { renderStudies, renderStudy, renderStudyForm } from "./estudios.js";
 import { renderAssignment, renderMyStudies, renderProgress } from "./seguimiento.js";
@@ -9,6 +16,7 @@ import {
   icon,
   infoNote,
   initials,
+  openDialog,
   pageHeader,
   setButtonLoading,
   setFormError,
@@ -72,6 +80,35 @@ const ROUTES = {
 
 const view = document.getElementById("view");
 let routeRequest = 0;
+
+const PENDING_INVITE_KEY = "discipulos.pending.invite.v1";
+let pendingInviteToken = null;
+
+function invitationTokenFromHash() {
+  const match = window.location.hash.match(/^#\/invitacion\/([^/?#]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function readStoredInviteToken() {
+  try {
+    return localStorage.getItem(PENDING_INVITE_KEY) || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function storeInviteToken(token) {
+  try {
+    if (token) localStorage.setItem(PENDING_INVITE_KEY, token);
+    else localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch (error) {
+    // Si el navegador bloquea localStorage, el flujo puntual sigue funcionando.
+  }
+}
+
+function clearStoredInviteToken() {
+  storeInviteToken(null);
+}
 
 function defaultPath(rol) {
   return rol === "discipulador" ? "/discipulos" : "/mis-estudios";
@@ -137,6 +174,161 @@ function renderError(container, error) {
   container.querySelector("[data-retry]")?.addEventListener("click", renderRoute);
 }
 
+function routeToDefault(user) {
+  setPath(defaultPath(user.rol));
+  renderRoute();
+}
+
+function showInvitationDialog({ title, message }) {
+  openDialog({
+    title,
+    content: `<div class="modal-content">${infoNote(escapeHtml(message), {
+      tone: "danger",
+      iconName: "alert",
+    })}</div>`,
+    footer: `<div class="modal-actions"><button type="button" class="btn btn-primary" data-dialog-close>Entendido</button></div>`,
+  });
+}
+
+async function acceptAndRoute(token, { explicit = false } = {}) {
+  const user = store.user;
+  if (!user) {
+    showAuthScreen();
+    return;
+  }
+
+  let invitation = null;
+  try {
+    invitation = await store.api.getInvitation(token);
+  } catch (error) {
+    invitation = null;
+  }
+
+  const reject = (title, message) => {
+    clearStoredInviteToken();
+    if (explicit) showInvitationDialog({ title, message });
+    routeToDefault(user);
+  };
+
+  if (!invitation) {
+    reject(
+      "Invitación no válida",
+      "No encontramos esta invitación. Pedile a tu discipulador que te envíe un link nuevo.",
+    );
+    return;
+  }
+
+  if (invitation.estado === "aceptada") {
+    if (invitation.discipulo_id === user.id) {
+      clearStoredInviteToken();
+      routeToDefault(user);
+      return;
+    }
+    reject("Invitación ya utilizada", "Esta invitación ya fue aceptada por otra cuenta.");
+    return;
+  }
+
+  if (invitation.estado === "revocada") {
+    reject("Invitación revocada", "El discipulador revocó este link. Pedile uno nuevo si querés unirte.");
+    return;
+  }
+
+  if (invitation.estado === "expirada") {
+    reject(
+      "Invitación vencida",
+      `Este link venció el ${formatDate(
+        invitation.fecha_vencimiento,
+      )}. Pedile a tu discipulador que genere uno nuevo.`,
+    );
+    return;
+  }
+
+  try {
+    await store.api.acceptInvitation(token);
+    clearStoredInviteToken();
+    toast(
+      `Invitación aceptada. Ya estás vinculado a ${
+        invitation.discipulador?.nombre || "tu discipulador"
+      }.`,
+    );
+    routeToDefault(user);
+  } catch (error) {
+    clearStoredInviteToken();
+    if (explicit) {
+      showInvitationDialog({
+        title: "No pudimos aceptar la invitación",
+        message: error.message || "Intentá nuevamente en unos minutos.",
+      });
+    }
+    routeToDefault(user);
+  }
+}
+
+async function handleInvitationLink(token) {
+  pendingInviteToken = token;
+  storeInviteToken(token);
+
+  if (store.user) {
+    await acceptAndRoute(token, { explicit: true });
+    pendingInviteToken = null;
+    return;
+  }
+
+  let invitation = null;
+  try {
+    invitation = await store.api.getInvitation(token);
+  } catch (error) {
+    invitation = null;
+  }
+
+  showAuthScreen();
+  pendingInviteToken = token;
+
+  if (!invitation) {
+    clearStoredInviteToken();
+    pendingInviteToken = null;
+    showInvitationError({
+      title: "Invitación no válida",
+      text: "No encontramos este link. Pedile a tu discipulador que te envíe uno nuevo.",
+    });
+    return;
+  }
+
+  if (invitation.estado === "expirada") {
+    clearStoredInviteToken();
+    pendingInviteToken = null;
+    showInvitationError({
+      title: "Invitación vencida",
+      text: `Este link venció el ${escapeHtml(
+        formatDate(invitation.fecha_vencimiento),
+      )}. Pedile a tu discipulador que genere uno nuevo.`,
+    });
+    return;
+  }
+
+  if (invitation.estado === "revocada") {
+    clearStoredInviteToken();
+    pendingInviteToken = null;
+    showInvitationError({
+      title: "Invitación revocada",
+      text: "El discipulador revocó este link. Pedile uno nuevo si querés unirte.",
+    });
+    return;
+  }
+
+  if (invitation.estado === "aceptada") {
+    clearStoredInviteToken();
+    pendingInviteToken = null;
+    showInvitationError({
+      title: "Invitación ya utilizada",
+      text: "Este link ya fue usado. Si ya tenés cuenta, iniciá sesión con tu email y contraseña.",
+    });
+    return;
+  }
+
+  applyInvitationContext({ token, invitation });
+}
+
 async function renderRoute() {
   if (!store.user) {
     showAuthScreen();
@@ -183,13 +375,39 @@ async function renderRoute() {
   }
 }
 
-function enterApp(user) {
+async function enterApp(user) {
   store.setUser(user);
   hideAuthScreen();
   const boot = document.getElementById("boot-screen");
   if (boot) boot.hidden = true;
   document.getElementById("app-screen").hidden = false;
   renderHeader(user);
+
+  if (pendingInviteToken) {
+    const token = pendingInviteToken;
+    pendingInviteToken = null;
+    await acceptAndRoute(token, { explicit: true });
+    return;
+  }
+
+  // Invitación abierta antes de confirmar el email: se retoma al iniciar sesión.
+  const storedToken = readStoredInviteToken();
+  if (storedToken) {
+    let invitation = null;
+    try {
+      invitation = await store.api.getInvitation(storedToken);
+    } catch (error) {
+      invitation = null;
+    }
+    const sameEmail =
+      invitation &&
+      String(invitation.email || "").toLowerCase() === String(user.email || "").toLowerCase();
+    if (invitation?.estado === "pendiente" && sameEmail && user.rol === "discipulo") {
+      await acceptAndRoute(storedToken, { explicit: false });
+      return;
+    }
+    clearStoredInviteToken();
+  }
 
   const path = currentPath();
   const allowed = (ROUTES[user.rol] || []).some((route) => route.pattern.test(path));
@@ -302,8 +520,9 @@ async function renderProfile(container) {
               : `<article class="card card-pad">
                   <h2 class="card-title">Acompañar a otros</h2>
                   <p class="text-muted text-sm mt-xs">
-                    Desde «Mis discípulos» podés agregar personas por su email, ver su progreso y
-                    asignarles estudios bíblicos. Las observaciones que escribas son privadas.
+                    Desde «Mis discípulos» podés invitar personas con un link personal, ver su
+                    progreso y asignarles estudios bíblicos. Las observaciones que escribas son
+                    privadas.
                   </p>
                   <a class="btn btn-secondary btn-block mt-md" href="#/discipulos">
                     ${icon("users")} Ir a Mis discípulos
@@ -376,13 +595,30 @@ async function boot() {
       target.focus({ preventScroll: true });
       target.scrollIntoView({ block: "start" });
     });
-    window.addEventListener("hashchange", () => {
+    window.addEventListener("hashchange", async () => {
+      const token = invitationTokenFromHash();
+      if (token) {
+        await handleInvitationLink(token);
+        return;
+      }
+      pendingInviteToken = null;
       if (!store.user) {
         showAuthScreen();
         return;
       }
+      clearInvitationContext();
       renderRoute();
     });
+
+    const inviteToken = invitationTokenFromHash();
+    if (inviteToken) {
+      pendingInviteToken = inviteToken;
+      storeInviteToken(inviteToken);
+      if (store.user) await enterApp(store.user);
+      else await handleInvitationLink(inviteToken);
+      return;
+    }
+
     if (store.user) enterApp(store.user);
     else showAuthScreen();
   } catch (error) {

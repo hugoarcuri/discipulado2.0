@@ -8,7 +8,7 @@ Este informe resume el trabajo realizado por etapas, los archivos principales in
 
 **Implementado:**
 - Estructura del proyecto (`index.html`, `css/styles.css`, `js/*.js`, `assets/img/*`, `supabase/schema.sql`).
-- Identidad visual cálida y minimalista: verde profundo, fondos claros, acentos dorados, tarjetas suaves, tipografías Fraunces + Inter.
+- Identidad visual cálida y minimalista: verde profundo, fondos claros, acentos dorados, tarjetas suaves, tipografía Inter en títulos y cuerpo.
 - Pantalla de acceso con logo, frase *Crecer en Cristo. Acompañar a otros*, login y registro.
 - Shell de la aplicación con encabezado, navegación por rol, vista principal, toasts y diálogo.
 - Enlace **Saltar al contenido** que enfoca `#view` o `#auth-screen` sin cambiar el hash.
@@ -54,7 +54,7 @@ Este informe resume el trabajo realizado por etapas, los archivos principales in
 
 **Implementado:**
 - Lista de discípulos vinculados con progreso.
-- Alta de discípulo por email (la cuenta debe existir como `discipulo`).
+- Alta de discípulo por invitación: link personal por email (ver Etapa 7).
 - Ficha del discípulo con asignaciones, estado, respuestas y observaciones.
 - Asignación de un estudio a varios discípulos.
 - Observaciones privadas del discipulador.
@@ -63,6 +63,24 @@ Este informe resume el trabajo realizado por etapas, los archivos principales in
 **Archivos:** `js/discipulos.js`, `js/estudios.js`, `js/ui.js`.
 
 **Verificación:** alta correcta y de error, asignación, observaciones y visualización de respuestas probadas.
+
+## Etapa 7 — Invitaciones de discípulos por link
+
+**Objetivo:** permitir que el discipulador sume discípulos sin que la cuenta exista antes, compartiendo un link personal por WhatsApp.
+
+**Implementado:**
+- Botón **Invitar discípulo** en **Mis discípulos**, con nombre y email.
+- Token aleatorio de 24 bytes, vencimiento a 14 días y estados `pendiente`, `aceptada`, `revocada` y `expirada`.
+- Diálogo de compartir con copia del link y mensaje de WhatsApp (`wa.me/?text=`).
+- Lista de invitaciones pendientes con copiar, compartir, revocar y fecha de vencimiento.
+- Ruta `#/invitacion/<token>`: muestra quién invita, fija el rol `discipulo` y el email de solo lectura.
+- Aceptación automática al registrarse o iniciar sesión; vínculo creado en `discipleships`.
+- Avisos claros para links inválidos, revocados, vencidos o usados con otro email.
+- Tabla `invitations` con RLS y funciones `get_invitation` / `accept_invitation` en Supabase; migración para proyectos existentes.
+
+**Archivos:** `js/invite.js`, `js/discipulos.js`, `js/auth.js`, `js/app.js`, `js/demo.js`, `js/supabase.js`, `index.html`, `css/styles.css`, `supabase/schema.sql`, `supabase/migrations/20261125_invitations.sql`.
+
+**Verificación:** flujo completo en modo demo: crear invitación, copiar y compartir, abrir el link sin sesión, registrarse, aceptar, aparecer en la lista, revocar y rechazar links inválidos, vencidos o de otro email. Modo real revisado por código y esquema, pendiente de prueba con credenciales.
 
 ## Etapa 5 — Estudios bíblicos y seguimiento del discípulo
 
@@ -103,7 +121,7 @@ Este informe resume el trabajo realizado por etapas, los archivos principales in
 2. **No hay recuperación de contraseña ni cambio de email** desde la interfaz; pueden gestionarse desde Supabase.
 3. **No hay desvinculación de discípulos ni eliminación de asignaciones**; se puede agregar con confirmación.
 4. **No hay carga de archivos, chat, notificaciones ni correo automático.**
-5. **No hay pruebas automatizadas** ni pipeline de despliegue.
+5. **No hay pruebas automatizadas**; el despliegue a GitHub Pages sí es automático.
 6. **La demostración depende de `localStorage`** y no debe usarse con datos reales.
 7. **Las fechas de los datos demo son fijas**; si se desea, pueden hacerse relativas a la fecha actual.
 8. **La versión del pasaje bíblico** proviene de `BIBLE_VERSION` en `js/config.js` y por defecto es RVR1960.

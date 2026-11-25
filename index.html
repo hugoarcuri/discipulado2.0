@@ -42,6 +42,7 @@
     </div>
 
     <div class="auth-content">
+      <div class="invite-banner" id="invitation-banner" hidden></div>
       <div class="auth-card">
         <div class="auth-mode" id="auth-mode-chip" hidden>
           <span class="status-dot"></span>
@@ -75,8 +76,8 @@
         <form id="register-form" class="form" novalidate hidden>
           <header class="auth-card-head">
             <p class="eyebrow">Nueva cuenta</p>
-            <h2>Creá tu cuenta</h2>
-            <p>Elegí cómo vas a participar para preparar tu espacio.</p>
+            <h2 id="register-title">Creá tu cuenta</h2>
+            <p id="register-lede">Elegí cómo vas a participar para preparar tu espacio.</p>
           </header>
           <div class="form-error" data-form-error role="alert" hidden></div>
 
@@ -85,7 +86,7 @@
             <input type="text" id="register-name" name="nombre" autocomplete="name" placeholder="Tu nombre completo" maxlength="80" required>
           </div>
 
-          <fieldset class="role-field">
+          <fieldset class="role-field" id="role-field">
             <legend>¿Cómo vas a usar Discípulos?</legend>
             <label class="role-option">
               <input type="radio" name="rol" value="discipulo" required>
@@ -106,6 +107,7 @@
           <div class="field">
             <label for="register-email">Email</label>
             <input type="email" id="register-email" name="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" required>
+            <p class="field-hint" id="register-email-hint" hidden>Este email viene en tu invitación y no se puede cambiar.</p>
           </div>
           <div class="field">
             <label for="register-password">Contraseña</label>

@@ -8,8 +8,10 @@
  */
 
 import { CONFIG } from "./config.js";
+import { createInviteToken } from "./invite.js";
 
 const SUPABASE_ESM = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const INVITATION_DAYS = 14;
 
 function logError(context, error) {
   console.error(`[Supabase:${context}]`, error);
@@ -265,53 +267,157 @@ export async function createSupabaseBackend() {
       );
   }
 
-  async function addDisciple(email) {
+  async function createInvitation({ nombre, email }) {
     const me = await requireUser();
     if (me.rol !== "discipulador") {
-      throw new Error("Solo un discipulador puede agregar discípulos.");
+      throw new Error("Solo un discipulador puede invitar discípulos.");
     }
+    const cleanName = String(nombre ?? "").trim().replace(/\s+/g, " ");
     const normalizedEmail = String(email ?? "").trim().toLowerCase();
+    if (cleanName.length < 2) throw new Error("Ingresá el nombre de la persona.");
+    if (cleanName.length > 80) throw new Error("El nombre no puede superar los 80 caracteres.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizedEmail)) {
+      throw new Error("Ingresá un email válido.");
+    }
+
     const { data: found, error: searchError } = await client.rpc(
       "buscar_discipulo_por_email",
       { p_email: normalizedEmail },
     );
     if (searchError) {
-      friendlyDataError("addDisciple.search", "No pudimos buscar esa cuenta.")(searchError);
+      friendlyDataError("createInvitation.search", "No pudimos verificar esa cuenta.")(searchError);
     }
     const disciple = Array.isArray(found) ? found[0] : found;
-    if (!disciple) {
-      throw new Error(
-        "No encontramos una cuenta de discípulo con ese email. La persona debe registrarse primero como discípulo.",
-      );
+    if (disciple) {
+      const { data: existing, error: existingError } = await client
+        .from("discipleships")
+        .select("id")
+        .eq("discipulador_id", me.id)
+        .eq("discipulo_id", disciple.id)
+        .maybeSingle();
+      if (existingError) {
+        friendlyDataError("createInvitation.existing", "No pudimos verificar el vínculo.")(
+          existingError,
+        );
+      }
+      if (existing) throw new Error("Ese discípulo ya está en tu lista.");
     }
 
-    const { data: existing, error: existingError } = await client
-      .from("discipleships")
+    const { data: pending, error: pendingError } = await client
+      .from("invitations")
       .select("id")
       .eq("discipulador_id", me.id)
-      .eq("discipulo_id", disciple.id)
+      .eq("email", normalizedEmail)
+      .eq("estado", "pendiente")
       .maybeSingle();
-    if (existingError) {
-      friendlyDataError("addDisciple.existing", "No pudimos verificar el vínculo.")(existingError);
+    if (pendingError) {
+      friendlyDataError("createInvitation.pending", "No pudimos verificar las invitaciones.")(
+        pendingError,
+      );
     }
-    if (existing) throw new Error("Ese discípulo ya está en tu lista.");
+    if (pending) throw new Error("Ya tenés una invitación pendiente para ese email.");
+
+    const expires = new Date();
+    expires.setDate(expires.getDate() + INVITATION_DAYS);
 
     const { data, error } = await client
-      .from("discipleships")
+      .from("invitations")
       .insert({
+        token: createInviteToken(),
         discipulador_id: me.id,
-        discipulo_id: disciple.id,
-        estado: "activo",
+        nombre: cleanName,
+        email: normalizedEmail,
+        estado: "pendiente",
+        fecha_vencimiento: expires.toISOString(),
       })
-      .select("id, discipulador_id, discipulo_id, fecha_inicio, estado")
+      .select(
+        "id, token, discipulador_id, nombre, email, estado, discipulo_id, fecha_creacion, fecha_vencimiento, fecha_aceptacion",
+      )
       .single();
     if (error) {
       friendlyDataError(
-        "addDisciple.create",
-        "No pudimos agregar al discípulo. Verificá que la cuenta tenga rol de discípulo.",
+        "createInvitation.insert",
+        "No pudimos crear la invitación. Verificá que la tabla y las políticas estén instaladas.",
       )(error);
     }
-    return { ...data, discipulo: disciple };
+    return data;
+  }
+
+  async function listInvitations() {
+    const me = await requireUser();
+    if (me.rol !== "discipulador") return [];
+    const { data, error } = await client
+      .from("invitations")
+      .select(
+        "id, token, discipulador_id, nombre, email, estado, discipulo_id, fecha_creacion, fecha_vencimiento, fecha_aceptacion",
+      )
+      .eq("discipulador_id", me.id)
+      .eq("estado", "pendiente")
+      .order("fecha_creacion", { ascending: false });
+    if (error) {
+      friendlyDataError("listInvitations", "No pudimos cargar las invitaciones.")(error);
+    }
+
+    const now = new Date();
+    const expired = data.filter((invitation) => new Date(invitation.fecha_vencimiento) < now);
+    if (expired.length) {
+      // Se marca el vencimiento sin bloquear la vista si la actualización falla.
+      await client
+        .from("invitations")
+        .update({ estado: "expirada" })
+        .in(
+          "id",
+          expired.map((invitation) => invitation.id),
+        )
+        .eq("estado", "pendiente");
+    }
+    const expiredIds = new Set(expired.map((invitation) => invitation.id));
+    return data.filter((invitation) => !expiredIds.has(invitation.id));
+  }
+
+  async function getInvitation(token) {
+    const { data, error } = await client.rpc("get_invitation", {
+      p_token: String(token ?? ""),
+    });
+    if (error) {
+      friendlyDataError("getInvitation", "No pudimos verificar la invitación.")(error);
+    }
+    if (!data) return null;
+    return data;
+  }
+
+  async function acceptInvitation(token) {
+    const { data, error } = await client.rpc("accept_invitation", {
+      p_token: String(token ?? ""),
+    });
+    if (error) {
+      const message = String(error.message || "").replace(/^P0001:\s*/, "");
+      if (/invitaci[oó]n|disc[ií]pulo|sesi[oó]n|perfil|email/i.test(message)) {
+        throw new Error(message);
+      }
+      friendlyDataError("acceptInvitation", "No pudimos aceptar la invitación.")(error);
+    }
+    return data;
+  }
+
+  async function revokeInvitation(invitationId) {
+    const me = await requireUser();
+    if (me.rol !== "discipulador") {
+      throw new Error("Solo un discipulador puede revocar invitaciones.");
+    }
+    const { data, error } = await client
+      .from("invitations")
+      .update({ estado: "revocada" })
+      .eq("id", invitationId)
+      .eq("discipulador_id", me.id)
+      .eq("estado", "pendiente")
+      .select("id, estado")
+      .maybeSingle();
+    if (error) {
+      friendlyDataError("revokeInvitation", "No pudimos revocar la invitación.")(error);
+    }
+    if (!data) throw new Error("Esa invitación ya no está pendiente.");
+    return data;
   }
 
   async function getDiscipleDetail(discipleId) {
@@ -848,7 +954,11 @@ export async function createSupabaseBackend() {
     signOut,
     updateProfile,
     listDisciples,
-    addDisciple,
+    createInvitation,
+    listInvitations,
+    getInvitation,
+    acceptInvitation,
+    revokeInvitation,
     getDiscipleDetail,
     listObservations,
     addObservation,

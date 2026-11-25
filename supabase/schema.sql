@@ -86,6 +86,22 @@ create table if not exists public.observations (
   fecha_creacion timestamptz not null default now()
 );
 
+-- Invitaciones por link: el token es el secreto del enlace y el email define
+-- qué cuenta puede aceptarlo. El discípulo se vincula recién al aceptar.
+create table if not exists public.invitations (
+  id uuid primary key default gen_random_uuid(),
+  token text not null unique check (char_length(token) between 32 and 128),
+  discipulador_id uuid not null references public.profiles (id) on delete cascade,
+  nombre text not null check (char_length(trim(nombre)) between 2 and 80),
+  email text not null,
+  estado text not null default 'pendiente'
+    check (estado in ('pendiente', 'aceptada', 'revocada', 'expirada')),
+  discipulo_id uuid references public.profiles (id) on delete set null,
+  fecha_creacion timestamptz not null default now(),
+  fecha_vencimiento timestamptz not null,
+  fecha_aceptacion timestamptz
+);
+
 create index if not exists discipleships_discipulador_idx
   on public.discipleships (discipulador_id);
 create index if not exists discipleships_discipulo_idx
@@ -106,6 +122,12 @@ create index if not exists observations_discipulador_idx
   on public.observations (discipulador_id);
 create index if not exists observations_discipulo_idx
   on public.observations (discipulo_id);
+create index if not exists invitations_discipulador_idx
+  on public.invitations (discipulador_id);
+create index if not exists invitations_email_idx
+  on public.invitations (lower(email));
+create index if not exists invitations_estado_idx
+  on public.invitations (estado);
 
 -- ------------------------------------------------------------
 -- 2. PERFIL AUTOMÁTICO AL REGISTRARSE
@@ -130,6 +152,17 @@ begin
     when new.raw_user_meta_data ->> 'rol' = 'discipulador' then 'discipulador'
     else 'discipulo'
   end;
+
+  -- Si el email tiene una invitación vigente, siempre entra como discípulo.
+  if exists (
+    select 1
+    from public.invitations
+    where lower(email) = lower(new.email)
+      and estado = 'pendiente'
+      and fecha_vencimiento > now()
+  ) then
+    v_rol := 'discipulo';
+  end if;
 
   insert into public.profiles (id, nombre, email, rol)
   values (new.id, left(v_nombre, 80), lower(new.email), v_rol)
@@ -347,6 +380,138 @@ as $$
   limit 1;
 $$;
 
+-- Devuelve los datos públicos de una invitación a partir del token.
+-- Se puede llamar sin sesión porque el token es el secreto del link.
+create or replace function public.get_invitation(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_inv record;
+begin
+  select
+    i.id,
+    i.nombre,
+    i.email,
+    case
+      when i.estado = 'pendiente' and i.fecha_vencimiento < now() then 'expirada'
+      else i.estado
+    end as estado,
+    i.fecha_creacion,
+    i.fecha_vencimiento,
+    i.discipulo_id,
+    p.nombre as discipulador_nombre
+  into v_inv
+  from public.invitations i
+  left join public.profiles p on p.id = i.discipulador_id
+  where i.token = trim(coalesce(p_token, ''))
+  limit 1;
+
+  if not found then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'id', v_inv.id,
+    'nombre', v_inv.nombre,
+    'email', v_inv.email,
+    'estado', v_inv.estado,
+    'fecha_creacion', v_inv.fecha_creacion,
+    'fecha_vencimiento', v_inv.fecha_vencimiento,
+    'discipulo_id', v_inv.discipulo_id,
+    'discipulador', jsonb_build_object(
+      'nombre', coalesce(v_inv.discipulador_nombre, 'Tu discipulador')
+    )
+  );
+end;
+$$;
+
+-- Acepta la invitación: exige sesión, email coincidente y rol de discípulo.
+-- Crea el vínculo de discipulado y marca la invitación como aceptada.
+create or replace function public.accept_invitation(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_inv public.invitations%rowtype;
+  v_profile public.profiles%rowtype;
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión para aceptar la invitación.';
+  end if;
+
+  select *
+  into v_inv
+  from public.invitations
+  where token = trim(coalesce(p_token, ''))
+  for update;
+
+  if not found then
+    raise exception 'No encontramos esta invitación.';
+  end if;
+
+  if v_inv.estado = 'aceptada' then
+    if v_inv.discipulo_id = v_uid then
+      return jsonb_build_object(
+        'invitation_id', v_inv.id,
+        'discipulador_id', v_inv.discipulador_id,
+        'discipulo_id', v_uid,
+        'already_accepted', true
+      );
+    end if;
+    raise exception 'Esta invitación ya fue utilizada por otra persona.';
+  end if;
+
+  if v_inv.estado = 'revocada' then
+    raise exception 'Esta invitación fue revocada por el discipulador.';
+  end if;
+
+  if v_inv.estado = 'expirada' or v_inv.fecha_vencimiento < now() then
+    raise exception 'Esta invitación venció. Pedile al discipulador que genere un link nuevo.';
+  end if;
+
+  select *
+  into v_profile
+  from public.profiles
+  where id = v_uid;
+
+  if not found then
+    raise exception 'No encontramos tu perfil.';
+  end if;
+
+  if v_profile.rol <> 'discipulo' then
+    raise exception 'Esta invitación es para una cuenta de discípulo.';
+  end if;
+
+  if lower(v_profile.email) <> lower(v_inv.email) then
+    raise exception 'Esta invitación es para otro email. Iniciá sesión con la cuenta invitada.';
+  end if;
+
+  insert into public.discipleships (discipulador_id, discipulo_id, estado)
+  values (v_inv.discipulador_id, v_uid, 'activo')
+  on conflict (discipulador_id, discipulo_id) do nothing;
+
+  update public.invitations
+  set estado = 'aceptada',
+      discipulo_id = v_uid,
+      fecha_aceptacion = now()
+  where id = v_inv.id;
+
+  return jsonb_build_object(
+    'invitation_id', v_inv.id,
+    'discipulador_id', v_inv.discipulador_id,
+    'discipulo_id', v_uid,
+    'already_accepted', false
+  );
+end;
+$$;
+
 -- ------------------------------------------------------------
 -- 4. ROW LEVEL SECURITY
 -- ------------------------------------------------------------
@@ -357,6 +522,7 @@ alter table public.studies enable row level security;
 alter table public.assignments enable row level security;
 alter table public.responses enable row level security;
 alter table public.observations enable row level security;
+alter table public.invitations enable row level security;
 
 -- profiles
 drop policy if exists "profiles_select_related" on public.profiles;
@@ -528,6 +694,39 @@ create policy "observations_delete_own"
     and public.is_my_disciple(discipulo_id)
   );
 
+-- invitations (el discipulador gestiona sus links; la aceptación va por RPC)
+drop policy if exists "invitations_select_own" on public.invitations;
+create policy "invitations_select_own"
+  on public.invitations for select
+  to authenticated
+  using (
+    discipulador_id = auth.uid()
+    or discipulo_id = auth.uid()
+  );
+
+drop policy if exists "invitations_insert_by_discipler" on public.invitations;
+create policy "invitations_insert_by_discipler"
+  on public.invitations for insert
+  to authenticated
+  with check (
+    discipulador_id = auth.uid()
+    and public.current_user_role() = 'discipulador'
+    and estado = 'pendiente'
+  );
+
+drop policy if exists "invitations_update_by_discipler" on public.invitations;
+create policy "invitations_update_by_discipler"
+  on public.invitations for update
+  to authenticated
+  using (discipulador_id = auth.uid())
+  with check (discipulador_id = auth.uid());
+
+drop policy if exists "invitations_delete_by_discipler" on public.invitations;
+create policy "invitations_delete_by_discipler"
+  on public.invitations for delete
+  to authenticated
+  using (discipulador_id = auth.uid());
+
 -- ------------------------------------------------------------
 -- 5. PERMISOS
 -- RLS filtra las filas; estos permisos habilitan las operaciones.
@@ -541,6 +740,7 @@ grant select, insert, update, delete on public.studies to authenticated;
 grant select, insert, update, delete on public.assignments to authenticated;
 grant select, insert, update, delete on public.responses to authenticated;
 grant select, insert, update, delete on public.observations to authenticated;
+grant select, insert, update, delete on public.invitations to authenticated;
 
 revoke all on public.profiles from anon;
 revoke all on public.discipleships from anon;
@@ -548,9 +748,16 @@ revoke all on public.studies from anon;
 revoke all on public.assignments from anon;
 revoke all on public.responses from anon;
 revoke all on public.observations from anon;
+revoke all on public.invitations from anon;
 
 revoke all on function public.buscar_discipulo_por_email(text) from public;
 grant execute on function public.buscar_discipulo_por_email(text) to authenticated;
+
+revoke all on function public.get_invitation(text) from public;
+grant execute on function public.get_invitation(text) to anon, authenticated;
+
+revoke all on function public.accept_invitation(text) from public;
+grant execute on function public.accept_invitation(text) to authenticated;
 
 revoke all on function public.handle_new_user() from public;
 revoke all on function public.protect_profile_fields() from public;
