@@ -1,6 +1,7 @@
 # Archivos locales que no deben publicarse
 material/
 *.pdf
+*.zip
 
 # Sistema
 .DS_Store
