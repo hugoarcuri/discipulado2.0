@@ -1,0 +1,7 @@
+# Archivos locales que no deben publicarse
+material/
+*.pdf
+
+# Sistema
+.DS_Store
+Thumbs.db

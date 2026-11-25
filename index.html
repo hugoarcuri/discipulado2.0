@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discípulos · Crecer en Cristo. Acompañar a otros.</title>
+  <meta name="description" content="Discípulos es una herramienta sencilla para acompañar y crecer en Cristo mediante estudios bíblicos y discipulado personal.">
+  <meta name="theme-color" content="#123c2d">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#view" id="skip-link">Saltar al contenido</a>
+
+  <div id="boot-screen" class="boot-screen">
+    <img src="assets/img/logo.svg" alt="" class="boot-logo" width="64" height="64">
+    <p class="boot-title">DISCÍPULOS</p>
+    <p class="boot-text" id="boot-text">Preparando el espacio de discipulado…</p>
+    <div class="boot-error" id="boot-error" role="alert" hidden>
+      <p id="boot-error-message"></p>
+      <button type="button" class="btn btn-secondary" id="boot-retry">Reintentar</button>
+    </div>
+  </div>
+
+  <!-- ===================== PANTALLA DE ACCESO ===================== -->
+  <main id="auth-screen" class="auth-screen" hidden aria-label="Acceso a Discípulos">
+    <div class="auth-panel">
+      <div class="auth-panel-top">
+        <img src="assets/img/logo-mark.svg" alt="" class="auth-logo" width="58" height="58">
+        <p class="eyebrow eyebrow-light">Discipulado cristiano</p>
+        <h1 class="auth-title">DISCÍPULOS</h1>
+        <p class="auth-phrase">Crecer en Cristo.<br>Acompañar a otros.</p>
+      </div>
+      <blockquote class="auth-verse">
+        <p>“Por tanto, id y haced discípulos a todas las naciones…”</p>
+        <cite>Mateo 28:19</cite>
+      </blockquote>
+      <p class="auth-panel-foot">Enseñar la Palabra. Acompañar el camino.</p>
+    </div>
+
+    <div class="auth-content">
+      <div class="auth-card">
+        <div class="auth-mode" id="auth-mode-chip" hidden>
+          <span class="status-dot"></span>
+          <span>Modo demostración · datos locales</span>
+        </div>
+
+        <!-- Iniciar sesión -->
+        <form id="login-form" class="form" novalidate>
+          <header class="auth-card-head">
+            <p class="eyebrow">Acceso</p>
+            <h2>Bienvenido</h2>
+            <p>Ingresá para continuar tu camino de discipulado.</p>
+          </header>
+          <div class="form-error" data-form-error role="alert" hidden></div>
+
+          <div class="field">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" name="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" required>
+          </div>
+          <div class="field">
+            <label for="login-password">Contraseña</label>
+            <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Tu contraseña" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="login-submit">
+            Ingresar
+          </button>
+          <p class="auth-switch">¿Todavía no tenés cuenta? <button type="button" class="link-btn" data-auth-view="register">Crear cuenta</button></p>
+        </form>
+
+        <!-- Registro -->
+        <form id="register-form" class="form" novalidate hidden>
+          <header class="auth-card-head">
+            <p class="eyebrow">Nueva cuenta</p>
+            <h2>Creá tu cuenta</h2>
+            <p>Elegí cómo vas a participar para preparar tu espacio.</p>
+          </header>
+          <div class="form-error" data-form-error role="alert" hidden></div>
+
+          <div class="field">
+            <label for="register-name">Nombre y apellido</label>
+            <input type="text" id="register-name" name="nombre" autocomplete="name" placeholder="Tu nombre completo" maxlength="80" required>
+          </div>
+
+          <fieldset class="role-field">
+            <legend>¿Cómo vas a usar Discípulos?</legend>
+            <label class="role-option">
+              <input type="radio" name="rol" value="discipulo" required>
+              <span class="role-option-body">
+                <span class="role-option-title">Discípulo</span>
+                <span class="role-option-text">Quiero recibir acompañamiento y estudiar la Palabra.</span>
+              </span>
+            </label>
+            <label class="role-option">
+              <input type="radio" name="rol" value="discipulador" required>
+              <span class="role-option-body">
+                <span class="role-option-title">Discipulador</span>
+                <span class="role-option-text">Quiero acompañar a otros y compartir estudios.</span>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="field">
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" name="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" required>
+          </div>
+          <div class="field">
+            <label for="register-password">Contraseña</label>
+            <input type="password" id="register-password" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" minlength="8" required>
+            <p class="field-hint">Usá al menos 8 caracteres. Tu contraseña la gestiona Supabase Auth.</p>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="register-submit">
+            Crear cuenta
+          </button>
+          <p class="auth-switch">¿Ya tenés cuenta? <button type="button" class="link-btn" data-auth-view="login">Iniciar sesión</button></p>
+        </form>
+
+        <div class="demo-box" id="demo-box" hidden>
+          <p class="demo-box-title">Cuentas de demostración</p>
+          <p class="demo-box-text">Probá la aplicación con datos de ejemplo. Se guardan únicamente en este navegador y no son datos reales.</p>
+          <div class="demo-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-demo-login="discipulador">
+              Entrar como discipulador
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" data-demo-login="discipulo">
+              Entrar como discípulo
+            </button>
+          </div>
+          <p class="demo-pass">Contraseña de ambas cuentas: <code>demo1234</code></p>
+        </div>
+      </div>
+
+      <p class="auth-footer">
+        La esencia del discipulado: enseñar la Palabra, acompañar y formar.
+      </p>
+    </div>
+  </main>
+  <div id="app-screen" class="app-shell" hidden>
+    <header class="app-header">
+      <div class="app-header-inner">
+        <a class="brand" href="#/">
+          <img src="assets/img/logo.svg" alt="" width="38" height="38">
+          <span class="brand-name">DISCÍPULOS</span>
+          <span class="mode-chip" id="mode-chip" hidden>Demo</span>
+        </a>
+
+        <div class="header-account">
+          <a class="user-chip" href="#/perfil" id="user-chip">
+            <span class="avatar avatar-sm" id="user-avatar" aria-hidden="true">·</span>
+            <span class="user-chip-text">
+              <span class="user-chip-name" id="user-name">—</span>
+              <span class="user-chip-role" id="user-role">—</span>
+            </span>
+          </a>
+          <button type="button" class="btn btn-icon btn-ghost" id="logout-button" aria-label="Cerrar sesión" title="Cerrar sesión">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="nav-wrap">
+        <nav class="main-nav" id="main-nav" aria-label="Menú principal"></nav>
+      </div>
+    </header>
+
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+
+  <!-- Notificaciones y diálogo -->
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog id="app-dialog" class="modal" aria-labelledby="dialog-title"></dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
