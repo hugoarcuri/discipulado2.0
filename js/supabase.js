@@ -136,9 +136,16 @@ export async function createSupabaseBackend() {
       return null;
     }
     if (!data.session?.user) return null;
-    const profile = await loadProfile(data.session.user);
-    cachedUser = profile;
-    return profile;
+    try {
+      const profile = await loadProfile(data.session.user);
+      cachedUser = profile;
+      return profile;
+    } catch (error) {
+      logError("getCurrentUser", error);
+      await client.auth.signOut().catch(() => {});
+      cachedUser = null;
+      return null;
+    }
   }
 
   async function requireUser() {
@@ -154,9 +161,15 @@ export async function createSupabaseBackend() {
       password,
     });
     if (error) throw translateAuthError(error, "No pudimos iniciar sesión. Intentá nuevamente.");
-    const profile = await loadProfile(data.user);
-    cachedUser = profile;
-    return profile;
+    try {
+      const profile = await loadProfile(data.user);
+      cachedUser = profile;
+      return profile;
+    } catch (error) {
+      await client.auth.signOut().catch(() => {});
+      cachedUser = null;
+      throw new Error("No pudimos cargar tu perfil. Volvé a iniciar sesión.");
+    }
   }
 
   async function signUp({ nombre, email, password, rol }) {
@@ -180,9 +193,15 @@ export async function createSupabaseBackend() {
       return { user: null, needsConfirmation: true };
     }
 
-    const profile = await loadProfile(data.user);
-    cachedUser = profile;
-    return { user: profile, needsConfirmation: false };
+    try {
+      const profile = await loadProfile(data.user);
+      cachedUser = profile;
+      return { user: profile, needsConfirmation: false };
+    } catch (error) {
+      await client.auth.signOut().catch(() => {});
+      cachedUser = null;
+      throw new Error("No pudimos crear tu perfil. Verificá que el esquema de Supabase esté instalado.");
+    }
   }
 
   async function signOut() {
