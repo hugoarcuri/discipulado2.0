@@ -376,7 +376,9 @@ as $$
   from public.profiles p
   where lower(p.email) = lower(trim(p_email))
     and p.rol = 'discipulo'
-    and public.current_user_role() = 'discipulador'
+    and exists (
+      select 1 from public.profiles where id = auth.uid() and rol = 'discipulador'
+    )
   limit 1;
 $$;
 
@@ -561,7 +563,9 @@ create policy "discipleships_insert_by_discipler"
   to authenticated
   with check (
     discipulador_id = auth.uid()
-    and public.current_user_role() = 'discipulador'
+    and exists (
+      select 1 from public.profiles where id = auth.uid() and rol = 'discipulador'
+    )
     and public.role_of(discipulo_id) = 'discipulo'
   );
 
@@ -581,7 +585,9 @@ create policy "studies_insert_by_creator"
   to authenticated
   with check (
     creador_id = auth.uid()
-    and public.current_user_role() = 'discipulador'
+    and exists (
+      select 1 from public.profiles where id = auth.uid() and rol = 'discipulador'
+    )
   );
 
 drop policy if exists "studies_update_by_creator" on public.studies;
@@ -710,7 +716,9 @@ create policy "invitations_insert_by_discipler"
   to authenticated
   with check (
     discipulador_id = auth.uid()
-    and public.current_user_role() = 'discipulador'
+    and exists (
+      select 1 from public.profiles where id = auth.uid() and rol = 'discipulador'
+    )
     and estado = 'pendiente'
   );
 

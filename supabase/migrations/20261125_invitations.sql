@@ -226,7 +226,9 @@ create policy "invitations_insert_by_discipler"
   to authenticated
   with check (
     discipulador_id = auth.uid()
-    and public.current_user_role() = 'discipulador'
+    and exists (
+      select 1 from public.profiles where id = auth.uid() and rol = 'discipulador'
+    )
     and estado = 'pendiente'
   );
 
